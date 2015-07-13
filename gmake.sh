@@ -284,10 +284,8 @@ DEFINES := $(for d in "${premakeDefines[@]}"; do
 	echo -e "\t-D${d} \\"
 done)
 
-CFLAGS += \$(INCLUDES) \$(DEFINES)
-CFLAGS += $(echo "${premakeBuildFlags[@]}")
-
-LDFLAGS += ${premakeLinkFlags[@]}
+ALL_CFLAGS := \$(CFLAGS) \$(INCLUDES) \$(DEFINES) $(echo "${premakeBuildFlags[@]}")
+ALL_LDFLAGS := \$(LDFLAGS) ${premakeLinkFlags[@]}
 
 .PHONY: all clean
 
@@ -303,7 +301,7 @@ all: \$(EMBEDDED_SCRIPTS_FILE) \$(TARGET)
 
 \$(TARGET): \$(TARGETDIR) \$(PREMAKE_SRC)
 	@echo Building premake5
-	@\$(CC) \$(CFLAGS) -o "\$(TARGET)" \$(PREMAKE_SRC) \$(LDFLAGS)
+	@\$(CC) \$(ALL_CFLAGS) -o "\$(TARGET)" \$(PREMAKE_SRC) \$(ALL_LDFLAGS)
 	
 clean:  
 	@echo Cleaning premake5

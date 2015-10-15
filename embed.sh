@@ -19,7 +19,6 @@ $(basename "${0}") [ -h] [-o <output directory>]
 EOF
 }
 
-# Create a temporary file
 ns_mktemp()
 {
 	local key=
@@ -30,18 +29,23 @@ ns_mktemp()
 	else
 		key="$(date +%s)"
 	fi
-	local __ns_mktemp=
-	if [ "$(uname -s)" == "Darwin" ]
+	if [ "$(uname -s)" = 'Darwin' ]
 	then
 		#Use key as a prefix
 		mktemp -t "${key}"
-	elif which 'mktemp' 1>/dev/null 2>&1
+	elif which 'mktemp' 1>/dev/null 2>&1 \
+		&& mktemp --suffix "${key}" 1>/dev/null 2>&1
 	then
-		# Use key as a suffix
 		mktemp --suffix "${key}"
 	else
-	local __ns_mktemp="/tmp/${key}.$(date +%s)-${RANDOM}"
-	touch "${__ns_mktemp}" && echo "${__ns_mktemp}"
+		local __ns_mktemp_root=
+		for __ns_mktemp_root in "${TMPDIR}" "${TMP}" '/var/tmp' '/tmp'
+		do
+			[ -d "${__ns_mktemp_root}" ] && break
+		done
+		[ -d "${__ns_mktemp_root}" ] || return 1
+		local __ns_mktemp="/${__ns_mktemp_root}/${key}.$(date +%s)-${RANDOM}"
+		touch "${__ns_mktemp}" && echo "${__ns_mktemp}"
 	fi
 }
 

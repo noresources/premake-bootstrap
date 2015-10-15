@@ -24,22 +24,32 @@ EOF
 
 ns_mktemp()
 {
-		local key=
-		if [ $# -gt 0 ]
-		then
-				key="${1}"
-				shift
-		else
-				key="$(date +%s)"
-		fi
-		if [ "$(uname -s)" == "Darwin" ]
-		then
-				#Use key as a prefix
-				mktemp -t "${key}"
-		else
-				#Use key as a suffix
-				mktemp --suffix "${key}"
-		fi
+	local key=
+	if [ $# -gt 0 ]
+	then
+		key="${1}"
+		shift
+	else
+		key="$(date +%s)"
+	fi
+	if [ "$(uname -s)" = 'Darwin' ]
+	then
+		#Use key as a prefix
+		mktemp -t "${key}"
+	elif which 'mktemp' 1>/dev/null 2>&1 \
+		&& mktemp --suffix "${key}" 1>/dev/null 2>&1
+	then
+		mktemp --suffix "${key}"
+	else
+		local __ns_mktemp_root=
+		for __ns_mktemp_root in "${TMPDIR}" "${TMP}" '/var/tmp' '/tmp'
+		do
+			[ -d "${__ns_mktemp_root}" ] && break
+		done
+		[ -d "${__ns_mktemp_root}" ] || return 1
+		local __ns_mktemp="/${__ns_mktemp_root}/${key}.$(date +%s)-${RANDOM}"
+		touch "${__ns_mktemp}" && echo "${__ns_mktemp}"
+	fi
 }
 
 ns_relativepath()

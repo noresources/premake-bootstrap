@@ -14,6 +14,9 @@ $(basename "${0}") [ -h] [-o <output directory>]
 		-n --name
 			Set embedded scripts file name
 			Default: ${defaultPremakeEmbeddedScriptFile}
+		-c --cc
+			C compiler
+			Default: ${cc}
 		-h --help
 			This help
 EOF
@@ -73,51 +76,6 @@ ns_realpath()
 	echo "${inputPath}"
 }
 
-# Replace file content inplace using sed
-ns_sed_inplace()
-{
-	local inplaceOptionForm=
-	if [ -z "${__ns_sed_inplace_inplaceOptionForm}" ]
-	then
-		if [ "$(uname -s)" = 'Darwin' ]
-		then
-			if [ "$(which sed 2>/dev/null)" = '/usr/bin/sed' ]
-			then
-				inplaceOptionForm='arg'			
-			fi 
-		fi
-		
-		if [ -z "${inplaceOptionForm}" ]
-		then
-			# Attempt to guess it from help
-			if sed --helo 2>&1 | grep -q '\-i\[SUFFIX\]'
-			then
-				inplaceOptionForm='nested'
-			elif sed --helo 2>&1 | grep -q '\-i extension'
-			then
-				inplaceOptionForm='arg'
-			else
-				inplaceOptionForm='noarg'
-			fi
-		fi
-	else
-		inplaceOptionForm="${__ns_sed_inplace_inplaceOptionForm}"
-	fi
-	
-	# Store for later use
-	__ns_sed_inplace_inplaceOptionForm="${inplaceOptionForm}"
-	
-	if [ "${inplaceOptionForm}" = 'nested' ]
-	then
-		sed -i'' "${@}"
-	elif [ "${inplaceOptionForm}" = 'arg' ]
-	then
-		sed -i '' "${@}"
-	else
-		sed -i "${@}"
-	fi
-}
-
 # Output files listed in manifests
 # Use lua if available, otherwise, parse file manually
 manifest_filelist()
@@ -135,71 +93,39 @@ manifest_filelist()
 	fi
 }
 
-# Append lua script content to embedded lua scripts file
-append_script()
+short_file_name ()
 {
 	local file="${1}"
-	# * Remove tabs, CR, inline comments and blank lines
-	# * Escape backslashes and double quotes
-	# * Escape end of lines
-	
-	local tmp=$(ns_mktemp)
-	cp -pr "${file}" "${tmp}"
-	
-	# Strip block comments 
-	perl -0777 -i -pe 's,--\[\[.*?\]\],,sg' "${tmp}"
-	# Strip single line comments 		
-	perl -i -pe 's,^[ \t]*--.*,,g' "${tmp}"
-	# Strip tabs & CR
-	perl -i -pe 's,[\r\t],,g' "${tmp}"
-	# Strip whitespace lines
-	perl -i -pe 's,^[ \t]*$,,g' "${tmp}"
-	ns_sed_inplace "/^$/d" "${tmp}"
-	# Escape backslashes and double quotes
-	perl -i -pe 's,([\\"]),\\\1,g' "${tmp}"
-	# Escape LN
-	perl -i -pe 's,\n,\\n,g' "${tmp}"
-
-	local content="$(cat "${tmp}")"
-	
-	local read=0
-	local first=true
-	
-	if [ -z "${maxLineLength}" ] || [ ${maxLineLength} -le 0 ]
-	then
-		echo -ne '\t"'
-		echo -n "${content}"
-		echo  '",' 
-	else
-		# Split into ${maxLineLength} chunks
-		while true
-		do
-			local sub="${content:0:$(expr ${maxLineLength} + 1)}"
-			local len=${#sub}
-			
-			while [ "${sub:$(expr ${len} - 1)}" = '\' ]
-			do
-				len=$(expr ${len} - 1)
-				sub="${content:0:${len}}"
-			done
-			
-			[ ${len} -eq 0 ] && break
-			
-			${first} || echo ''
-			echo -ne '\t"'
-			echo -n "${sub}"
-			echo -n '"'
-			
-			first=false		
-			read=$(expr ${read} + ${len})
-			content="${content:${len}}"
-		done
-	fi
-	
-	echo ','
-	
-	rm -f "${tmp}"
+	file="${file#${premakeRootPath}/}"
+	echo "${file#modules/}"
 }
+
+append_script_bytecode()
+{
+	local file="${1}"
+	local index=${2}
+	
+	local input="${file}"
+	
+	local input="$(ns_mktemp)"
+	luac -o "${input}" "${file}"
+			
+	echo "// $(short_file_name "${file}")"
+	echo -n "static const unsigned char builtin_script_${index}[] = {"
+	"${bytecodeBin[@]}" "${input}"
+	
+	[ -f "${input}" ] && rm -f "${input}"
+		
+	echo '};'
+}
+
+cleanup ()
+{
+	[ -f "${bytecodeBin}" ] && rm -f "${bytecodeBin}"
+	echo -n ''
+}
+
+trap cleanup EXIT
 
 scriptFilePath="$(ns_realpath "${0}")"
 scriptPath="$(dirname "${scriptFilePath}")"
@@ -209,6 +135,14 @@ outputDirectory="${defaultOutputDirectory}"
 maxLineLength=4096
 defaultPremakeEmbeddedScriptFile='scripts.c'
 premakeEmbeddedScriptFile="${defaultPremakeEmbeddedScriptFile}"
+bytecodeBin="$(ns_mktemp)"
+
+# Default compiler
+cc=''
+for x in cc gcc clang
+do
+	which ${x} 1>/dev/null 2>&1 && cc=${x} && break
+done
 
 ####################
 # Parse command line
@@ -237,6 +171,17 @@ do
 				exit 1
 			fi
 		;;
+		-c|--cc)
+			cc="${2}"
+			shift
+			
+			if ! which "${cc}" 1>/dev/null 2>&1
+			then
+				echo "Invalid compiler '${cc}'"
+				usage
+				exit 1
+			fi
+			;;
 		-h|--help)
 			usage
 			exit 0
@@ -258,7 +203,7 @@ done
 
 ####################
 # Check requirements
-for x in sed perl
+for x in sed perl luac
 do
 	if ! which ${x} 1>/dev/null 2>&1
 	then
@@ -266,6 +211,16 @@ do
 		exit 1
 	fi
 done
+
+[ -x "${cc}" ] \
+&& cc="$(ns_realpath "${cc}")" \
+|| cc="$(which "${cc}")"
+
+if ! ${cc} -o "${bytecodeBin}" "${scriptPath}/bytecode.c"
+then
+	echo 'Failed to compile bytecode program'
+	exit 1
+fi
 
 ####################
 # Generate scripts.c
@@ -285,8 +240,6 @@ cat > "${premakeEmbeddedScriptFilePath}" << EOF
 /* To regenerate this file, run: premake5 embed */
 
 #include "premake.h"
-
-const char* builtin_scripts_index[] = {
 EOF
 
 unset builtinScriptPaths
@@ -301,7 +254,6 @@ do
 		builtinScriptPath="${manifestDirectory}/${f}"
 		builtinScriptPaths=("${builtinScriptPaths[@]}" "${builtinScriptPath}")
 		builtinScriptPath="${builtinScriptPath#${manifestBaseDirectory}/}"
-		echo -e "\t\"${builtinScriptPath}\"," >> "${premakeEmbeddedScriptFilePath}"
 	done << EOF 
 $(manifest_filelist "${manifestPath}")
 EOF
@@ -315,22 +267,25 @@ for f in \
 do
 	builtinScriptPath="${premakeRootPath}/${f}"
 	builtinScriptPaths=("${builtinScriptPaths[@]}" "${builtinScriptPath}")
-	echo -e "\t\"${f}\"," >> "${premakeEmbeddedScriptFilePath}"
 done
 
-cat >> "${premakeEmbeddedScriptFilePath}" << EOF
-	NULL
-};
-
-const char* builtin_scripts[] = {
-EOF
-
+fileIndex=0
 for f in "${builtinScriptPaths[@]}"
 do
-	append_script "${f}" >> "${premakeEmbeddedScriptFilePath}"
+	append_script_bytecode "${f}" ${fileIndex} >> "${premakeEmbeddedScriptFilePath}"
+	fileIndex=$(expr ${fileIndex} + 1)
 done
 
+echo 'const buildin_mapping builtin_scripts[] = {' >> "${premakeEmbeddedScriptFilePath}" 
+
+fileIndex=0
+for f in "${builtinScriptPaths[@]}"
+do
+	f="${f#${premakeRootPath}/}"
+	echo -e "\t{\"${f}\", builtin_script_${fileIndex}, sizeof(builtin_script_${fileIndex})}," >> "${premakeEmbeddedScriptFilePath}"
+	fileIndex=$(expr ${fileIndex} + 1)
+done
 cat >> "${premakeEmbeddedScriptFilePath}" << EOF
-	NULL
+	{NULL, NULL, 0}
 };
 EOF

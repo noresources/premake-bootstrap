@@ -96,25 +96,35 @@ ns_relativepath()
 
 ns_realpath()
 {
-	local inputPath=
+	local __ns_realpath_in=
 	if [ $# -gt 0 ]
 	then
-		inputPath="${1}"
+		__ns_realpath_in="${1}"
 		shift
 	fi
-	local cwd="$(pwd)"
-	[ -d "${inputPath}" ] && cd "${inputPath}" && inputPath="."
-	while [ -h "${inputPath}" ] ; do inputPath="$(readlink "${inputPath}")"; done
+	local __ns_realpath_rl=
+	local __ns_realpath_cwd="$(pwd)"
+	[ -d "${__ns_realpath_in}" ] && cd "${__ns_realpath_in}" && __ns_realpath_in="."
+	while [ -h "${__ns_realpath_in}" ]
+	do
+		__ns_realpath_rl="$(readlink "${__ns_realpath_in}")"
+		if [ "${__ns_realpath_rl#/}" = "${__ns_realpath_rl}" ]
+		then
+			__ns_realpath_in="$(dirname "${__ns_realpath_in}")/${__ns_realpath_rl}"
+		else
+			__ns_realpath_in="${__ns_realpath_rl}"
+		fi
+	done
 	
-	if [ -d "${inputPath}" ]
+	if [ -d "${__ns_realpath_in}" ]
 	then
-		inputPath="$(cd -P "$(dirname "${inputPath}")" && pwd)"
+		__ns_realpath_in="$(cd -P "$(dirname "${__ns_realpath_in}")" && pwd)"
 	else
-		inputPath="$(cd -P "$(dirname "${inputPath}")" && pwd)/$(basename "${inputPath}")"
+		__ns_realpath_in="$(cd -P "$(dirname "${__ns_realpath_in}")" && pwd)/$(basename "${__ns_realpath_in}")"
 	fi
 	
-	cd "${cwd}" 1>/dev/null 2>&1
-	echo "${inputPath}"
+	cd "${__ns_realpath_cwd}" 1>/dev/null 2>&1
+	echo "${__ns_realpath_in}"
 }
 
 scriptFilePath="$(ns_realpath "${0}")"

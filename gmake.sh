@@ -141,8 +141,6 @@ outputDirectory="${defaultOutputDirectory}"
 defaultTargetDirectory="${premakeRootPath}/bin/release"
 targetDirectory="${defaultTargetDirectory}"
 
-luaSourceDirectoryName="$(find "${premakeRootPath}/src/host" -mindepth 1 -maxdepth 1 -type d -name 'lua*' -exec basename "{}" \;)"
-
 while [ ${#} -gt 0 ]
 do
 	case "${1}" in
@@ -215,10 +213,10 @@ premakeDefines=(NDEBUG)
 
 # Exclude files, relative to preamke root
 premakeExcludeFiles=(\
-	"src/host/${luaSourceDirectoryName}/src/lauxlib.c" \
-	"src/host/${luaSourceDirectoryName}/src/lua.c" \
-	"src/host/${luaSourceDirectoryName}/src/luac.c" \
-	"src/host/${luaSourceDirectoryName}/src/print.c" \
+	"contrib/lua/src/lauxlib.c" \
+	"contrib/lua/src/lua.c" \
+	"contrib/lua/src/luac.c" \
+	"contrib/lua/src/print.c" \
 )
 
 if [ "${embeddedScriptFilePath}" != "${defaultEmbeddedScriptFilePath}" ]
@@ -230,7 +228,7 @@ fi
 
 premakeIncludeDirectories=(\
 	"${premakeRootPath}/src/host" \
-	"${premakeRootPath}/src/host/${luaSourceDirectoryName}/src"\
+	"${premakeRootPath}/contrib/lua/src" \
 )
 
 if [ "${kernel}" = 'Darwin' ]
@@ -246,29 +244,34 @@ then
 fi
 
 # Create source file list
-while read f
+for d in \
+	src \
+	contrib/lua
 do
-	r="${f#${premakeRootPath}/}"
-	add=true
-	
-	# Do not add files marked as excluded
-	for x in "${premakeExcludeFiles[@]}"
+	while read f
 	do
-		if [ "${r}" = "${x}" ]
-		then
-			add=false
-			break
-		fi
-	done
-	
-	# Do not add files in etc directory of lua sources
-	[ "${r}" = "${r#src/host/${luaSourceDirectoryName}/etc/}" ] || add=false
+		r="${f#${premakeRootPath}/}"
+		add=true
 		
-	${add} && 	premakeSourceFiles=("${premakeSourceFiles[@]}" "${f}")
-	
-done << EOF
-$(find "${premakeRootPath}/src" \( -name '*.c' \))
+		# Do not add files marked as excluded
+		for x in "${premakeExcludeFiles[@]}"
+		do
+			if [ "${r}" = "${x}" ]
+			then
+				add=false
+				break
+			fi
+		done
+		
+		# Do not add files in etc directory of lua sources
+		[ "${r}" = "${r#contrib/lua/etc/}" ] || add=false
+			
+		${add} && premakeSourceFiles=("${premakeSourceFiles[@]}" "${f}")
+		
+	done << EOF
+	$(find "${premakeRootPath}/${d}" \( -name '*.c' \))
 EOF
+done
 
 # Writing makefile
 cat > "${makefilePath}" << EOF

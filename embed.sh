@@ -19,7 +19,7 @@ $(basename "${0}") [ -h] [-o <output directory>]
 			Default: ${cc}
 		-l --luac
 			${luaPremakeVersion} compiler
-			Default: $(luac)
+			Default: ${luac}
 		-h --help
 			This help
 EOF
@@ -160,7 +160,7 @@ do
 done
 
 # Get premake lua version
-luaPremakeVersion="$(egrep "#define[[:space:]]LUA_VERSION[[:space:]]" "${premakeRootPath}/src/host/lua/src/lua.h" | cut -f 2 -d'"')"
+luaPremakeVersion="$(egrep "#define[[:space:]]LUA_VERSION[[:space:]]" "${premakeRootPath}/contrib/lua/src/lua.h" | cut -f 2 -d'"')"
 
 ####################
 # Parse command line

@@ -1,6 +1,8 @@
 # premake-bootstrap
 Alternative ways to build premake
 
+_Attention_: These scripts are now deprecated by the built-in Bootstrap makefile of newer premake5 versions.
+
 ## Usage
 Clone or submodule this repository in the premake source tree root
 ```

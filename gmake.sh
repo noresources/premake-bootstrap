@@ -1,4 +1,114 @@
 #!/usr/bin/env bash
+
+# ns-xml XSH library
+
+ns_semver_number_to_string()
+{
+	local _ns_semver_input=
+	if [ $# -gt 0 ]
+	then
+		_ns_semver_input="${1}"
+		shift
+	fi
+	local _ns_semver_major=0
+	local _ns_semver_minor=0
+	local _ns_semver_patch=0
+	if [ -z "${_ns_semver_input##*[!0-9]*}" ]
+	then
+		echo "${_ns_semver_input} is not a valid numerical version number" 1>&2
+		return 1
+	fi
+	
+	_ns_semver_major=$(expr ${_ns_semver_input} / 10000)
+	_ns_semver_minor=$(expr $(expr ${_ns_semver_input} % 10000) / 100)
+	_ns_semver_patch=$(expr ${_ns_semver_input} % 100)
+	echo "${_ns_semver_major}.${_ns_semver_minor}.${_ns_semver_patch}"
+	return 0
+}
+ns_semver_string_to_number()
+{
+	local _ns_semver_input=
+	if [ $# -gt 0 ]
+	then
+		_ns_semver_input="${1}"
+		shift
+	fi
+	local _ns_semver_major=0
+	local _ns_semver_minor=0
+	local _ns_semver_patch=0
+	_ns_semver_input="$(echo "${_ns_semver_input}" | cut -f 1 -d'-' | cut -f 1 -d'+')"
+	
+	_ns_semver_major="$(echo "${_ns_semver_input}" | cut -sf 1 -d'.')"
+	_ns_semver_minor="$(echo "${_ns_semver_input}" | cut -sf 2 -d'.')"
+	_ns_semver_patch="$(echo "${_ns_semver_input}" | cut -sf 3 -d'.')"
+	
+	if [ -z "${_ns_semver_major}" ]
+	then
+		_ns_semver_major=${_ns_semver_input}
+		_ns_semver_minor=0
+		_ns_semver_patch=0
+	elif [ -z "${_ns_semver_minor}" ]
+	then
+		_ns_semver_minor=${_ns_semver_input}
+		_ns_semver_patch=0
+	elif [ -z "${_ns_semver_patch}" ]
+	then
+		_ns_semver_patch=0
+	fi
+	
+	_ns_semver_major=${_ns_semver_major##*[!0-9]*}
+	[ -z "${_ns_semver_major}" ] && return 1
+	_ns_semver_minor=${_ns_semver_minor##*[!0-9]*}
+	[ -z "${_ns_semver_minor}" ] && return 2
+	_ns_semver_patch=${_ns_semver_patch##*[!0-9]*}
+	[ -z "${_ns_semver_patch}" ] && return 3
+	
+	expr "${_ns_semver_patch}" '+' "$(expr "$(expr "${_ns_semver_minor}" '*' 100)" '+' "$(expr "${_ns_semver_major}" '*' 10000)")"
+	return 0
+}
+ns_semver_get()
+{
+	local _ns_semver_component=
+	if [ $# -gt 0 ]
+	then
+		_ns_semver_component="${1}"
+		shift
+	fi
+	local _ns_semver_input=
+	if [ $# -gt 0 ]
+	then
+		_ns_semver_input="${1}"
+		shift
+	fi
+	local _ns_semver_tmp=
+	local _ns_semver_index=1
+	case "${_ns_semver_component}" in
+		major|minor|patch)
+			_ns_semver_index=1
+			[ "${_ns_semver_component}" = 'minor' ] && _ns_semver_index=2
+			[ "${_ns_semver_component}" = 'patch' ] && _ns_semver_index=3
+			_ns_semver_tmp="$(echo "${_ns_semver_input}" | cut -f 1 -d'-' | cut -f 1 -d'+')"
+			_ns_semver_tmp="$(echo "${_ns_semver_tmp}" | cut -sf ${_ns_semver_index} -d'.')"
+			[ -z "${_ns_semver_tmp}" ] && _ns_semver_tmp=0
+			echo "${_ns_semver_tmp}"
+			;;
+		label)
+			echo "${_ns_semver_input}" | cut -sf 2 -d'-' | cut -f 1 -d'+'
+			;;
+		metadata)
+			echo "${_ns_semver_input}" | cut -sf 2 -d'+'
+			;;
+		*)
+			echo "Unknown component ${_ns_semver_component}" 1>&2
+			return 1
+			;;
+	esac
+}
+
+
+## ns-xml XSH library ###########################
+
+
 ###################################################
 # Generate a GNU makefile to build premake
 
@@ -233,9 +343,16 @@ premakeIncludeDirectories=(\
 
 if [ "${kernel}" = 'Darwin' ]
 then
+	macosxVersionString="$(sw_vers -productVersion)"
+	macosxVersionNumber="$(ns_semver_string_to_number "${macosxVersionString}")"
+	echo ${macosxVersionNumber}
+	macosxMinVersion=10.4
+	[ ${macosxVersionNumber} -ge 101400 ] && macosxMinVersion=10.9
+	
 	premakeDefines=("${premakeDefines[@]}" LUA_USE_MACOSX)
 	premakeLinkFlags=("${premakeLinkFlags[@]}" -framework CoreServices)
-	premakeBuildFlags=("${premakeBuildFlags[@]}" -mmacosx-version-min=10.4)
+	 
+	premakeBuildFlags=("${premakeBuildFlags[@]}" -mmacosx-version-min=${macosxMinVersion})
 elif [ "${kernel}" = 'Linux' ]
 then
 	premakeDefines=("${premakeDefines[@]}" LUA_USE_POSIX LUA_USE_DLOPEN)
